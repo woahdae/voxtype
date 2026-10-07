@@ -1265,8 +1265,11 @@ drop words from a long recording: speech after a pause of a few seconds, or
 the end of a long stretch of continuous speech. Short segments avoid both.
 
 Recordings are cut at every pause of 1 second or more, and any segment still
-longer than 15 seconds is cut at its longest internal gap. Cuts fall in
-silence, so words are not split. Applies to the batch pipeline only, not
+longer than 15 seconds is cut at its longest internal gap. Neighbouring
+segments are then joined again while they fit in 15 seconds and the pause
+between them is 3 seconds or less, so slow speech with many short pauses
+keeps enough context to transcribe well. Cuts fall in silence, so words are
+not split. Applies to the batch pipeline only, not
 `streaming`.
 
 **Example:**

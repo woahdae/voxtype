@@ -10,7 +10,11 @@
 //! 1. Cut at the middle of every pause of at least `min_pause_secs`.
 //! 2. Cut any piece still longer than `max_segment_secs` at its longest
 //!    internal gap (or at the limit if it has none), repeating as needed.
-//! 3. Trim each piece's leading and trailing silence down to
+//! 3. Join neighbouring pieces again while they fit `max_segment_secs`
+//!    and the pause between them is at most `max_merged_pause_secs`, so
+//!    slow speech with many short pauses is not cut into fragments too
+//!    small for Parakeet to transcribe well.
+//! 4. Trim each piece's leading and trailing silence down to
 //!    `padding_secs`, and drop pieces that contain no speech.
 //!
 //! Cuts always fall in silence when one exists, so words are not split,
@@ -36,6 +40,10 @@ pub struct PauseSplitConfig {
     /// with 0.4 s or more, a breath or click before the speech can make
     /// Parakeet return nothing for the whole segment.
     pub padding_secs: f32,
+    /// Neighbouring segments separated by a pause no longer than this are
+    /// joined while they fit `max_segment_secs`. Very short segments lose
+    /// words at their edges, which hurts slow speech with many pauses.
+    pub max_merged_pause_secs: f32,
 }
 
 impl Default for PauseSplitConfig {
@@ -45,6 +53,7 @@ impl Default for PauseSplitConfig {
             min_pause_secs: 1.0,
             max_segment_secs: 15.0,
             padding_secs: 0.1,
+            max_merged_pause_secs: 3.0,
         }
     }
 }
@@ -86,6 +95,8 @@ pub fn plan_segments(samples: &[f32], config: &PauseSplitConfig) -> Vec<Range<us
     for window in cuts.windows(2) {
         split_long(window[0]..window[1], &gaps, max_segment, &mut pieces);
     }
+    let max_merged_pause = secs_to_frames(config.max_merged_pause_secs);
+    let pieces = merge_short(pieces, &speech, max_segment, max_merged_pause);
 
     let padding = secs_to_frames(config.padding_secs);
     pieces
@@ -132,6 +143,33 @@ fn silent_runs(speech: &[bool]) -> Vec<Range<usize>> {
         runs.push(s..speech.len());
     }
     runs
+}
+
+/// Join neighbouring pieces while the result still fits `max_len`, so slow
+/// speech with many pauses keeps enough context for Parakeet.
+/// Pauses longer than `max_pause` stay cuts, since Parakeet drops speech
+/// that follows a long silence.
+fn merge_short(
+    pieces: Vec<Range<usize>>,
+    speech: &[bool],
+    max_len: usize,
+    max_pause: usize,
+) -> Vec<Range<usize>> {
+    let mut merged: Vec<Range<usize>> = Vec::new();
+    for piece in pieces {
+        let pause = |last: &Range<usize>| {
+            let before = last.clone().rev().take_while(|&i| !speech[i]).count();
+            let after = piece.clone().take_while(|&i| !speech[i]).count();
+            before + after
+        };
+        match merged.last_mut() {
+            Some(last) if piece.end - last.start <= max_len && pause(last) <= max_pause => {
+                last.end = piece.end
+            }
+            _ => merged.push(piece),
+        }
+    }
+    merged
 }
 
 /// Split `piece` at its longest internal gap until every part fits `max_len`.
@@ -203,6 +241,36 @@ mod tests {
         let samples = audio(&[(3.0, true), (6.0, false), (2.0, true)]);
         let segments = secs(&plan_segments(&samples, &PauseSplitConfig::default()));
         assert_eq!(segments, vec![(0.0, 3.1), (8.9, 11.0)]);
+    }
+
+    #[test]
+    fn short_pieces_across_moderate_pauses_are_joined() {
+        // Slow speech: 1.5 s pauses between short phrases, 9 s in all
+        let samples = audio(&[
+            (2.0, true),
+            (1.5, false),
+            (1.0, true),
+            (1.5, false),
+            (3.0, true),
+        ]);
+        let segments = plan_segments(&samples, &PauseSplitConfig::default());
+        assert_eq!(segments, vec![0..samples.len()]);
+    }
+
+    #[test]
+    fn joining_stops_at_the_segment_limit() {
+        // Four 5 s phrases with 1.5 s pauses: only two fit in 15 s
+        let samples = audio(&[
+            (5.0, true),
+            (1.5, false),
+            (5.0, true),
+            (1.5, false),
+            (5.0, true),
+            (1.5, false),
+            (5.0, true),
+        ]);
+        let segments = secs(&plan_segments(&samples, &PauseSplitConfig::default()));
+        assert_eq!(segments.len(), 2, "{segments:?}");
     }
 
     #[test]
