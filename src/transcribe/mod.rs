@@ -50,6 +50,8 @@ pub mod ctc;
 
 #[cfg(feature = "parakeet")]
 pub mod parakeet;
+#[cfg(feature = "parakeet")]
+pub mod pause_split;
 
 #[cfg(feature = "moonshine")]
 pub mod moonshine;

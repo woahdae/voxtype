@@ -7,6 +7,7 @@
 //! - CTC (Connectionist Temporal Classification): faster, character-level output
 //! - TDT (Token-Duration-Transducer): recommended, proper punctuation and word boundaries
 
+use super::pause_split::{self, PauseSplitConfig};
 use super::{TimedSegment, Transcriber};
 use crate::config::{ParakeetConfig, ParakeetModelType};
 use crate::error::TranscribeError;
@@ -36,6 +37,8 @@ pub struct ParakeetTranscriber {
     model: ParakeetModel,
     /// Model type for logging
     model_type: ParakeetModelType,
+    /// Transcribe pause-delimited segments separately (see `pause_split`)
+    segment_on_pauses: bool,
 }
 
 impl ParakeetTranscriber {
@@ -81,12 +84,41 @@ impl ParakeetTranscriber {
             start.elapsed().as_secs_f32()
         );
 
-        Ok(Self { model, model_type })
+        Ok(Self {
+            model,
+            model_type,
+            segment_on_pauses: config.segment_on_pauses,
+        })
     }
 }
 
-impl Transcriber for ParakeetTranscriber {
-    fn transcribe(&self, samples: &[f32]) -> Result<String, TranscribeError> {
+impl ParakeetTranscriber {
+    /// Transcribe each pause-delimited segment and join the results.
+    fn transcribe_segmented(&self, samples: &[f32]) -> Result<String, TranscribeError> {
+        let segments = pause_split::plan_segments(samples, &PauseSplitConfig::default());
+        match segments.as_slice() {
+            [] => return self.transcribe_whole(samples),
+            [only] => return self.transcribe_whole(&samples[only.clone()]),
+            _ => {}
+        }
+
+        tracing::info!(
+            "Split {:.1}s of audio into {} segments at pauses",
+            samples.len() as f32 / 16000.0,
+            segments.len()
+        );
+
+        let mut texts = Vec::with_capacity(segments.len());
+        for segment in segments {
+            let text = self.transcribe_whole(&samples[segment])?;
+            if !text.is_empty() {
+                texts.push(text);
+            }
+        }
+        Ok(texts.join(" "))
+    }
+
+    fn transcribe_whole(&self, samples: &[f32]) -> Result<String, TranscribeError> {
         if samples.is_empty() {
             return Err(TranscribeError::AudioFormat(
                 "Empty audio buffer".to_string(),
@@ -166,6 +198,16 @@ impl Transcriber for ParakeetTranscriber {
         );
 
         Ok(text)
+    }
+}
+
+impl Transcriber for ParakeetTranscriber {
+    fn transcribe(&self, samples: &[f32]) -> Result<String, TranscribeError> {
+        if self.segment_on_pauses {
+            self.transcribe_segmented(samples)
+        } else {
+            self.transcribe_whole(samples)
+        }
     }
 
     fn transcribe_timed(&self, samples: &[f32]) -> Result<Vec<TimedSegment>, TranscribeError> {

@@ -1253,6 +1253,29 @@ streaming = true
 mode = "toggle"
 ```
 
+### segment_on_pauses
+
+**Type:** Boolean
+**Default:** `false`
+**Required:** No
+
+When `true`, voxtype splits each recording at pauses and transcribes every
+stretch of speech separately, then joins the text. Parakeet TDT can silently
+drop words from a long recording: speech after a pause of a few seconds, or
+the end of a long stretch of continuous speech. Short segments avoid both.
+
+Recordings are cut at every pause of 1 second or more, and any segment still
+longer than 15 seconds is cut at its longest internal gap. Cuts fall in
+silence, so words are not split. Applies to the batch pipeline only, not
+`streaming`.
+
+**Example:**
+```toml
+[parakeet]
+model = "parakeet-tdt-0.6b-v3"
+segment_on_pauses = true
+```
+
 ### Complete Example
 
 ```toml

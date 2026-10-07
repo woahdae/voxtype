@@ -1234,6 +1234,17 @@ pub const CONFIG_KEYS: &[KeySpec] = &[
     )
     .for_engine("parakeet")
     .gated("parakeet"),
+    spec(
+        "parakeet.segment_on_pauses",
+        "parakeet",
+        "segment_on_pauses",
+        KeyType::Bool,
+        "Advanced",
+        "Segment on pauses",
+        "Transcribe each stretch of speech between pauses separately. Fixes words dropped after long pauses.",
+    )
+    .for_engine("parakeet")
+    .gated("parakeet"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1564,6 +1575,7 @@ pub fn resolve(key: &str, cfg: &Config) -> Option<Json> {
         },
         "parakeet.on_demand_loading" => json!(pk().on_demand_loading),
         "parakeet.streaming" => json!(pk().streaming),
+        "parakeet.segment_on_pauses" => json!(pk().segment_on_pauses),
 
         "moonshine.model" => json!(mn().model),
         "moonshine.quantized" => json!(mn().quantized),

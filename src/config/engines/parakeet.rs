@@ -56,6 +56,13 @@ pub struct ParakeetConfig {
     /// `UnifiedStreamingConfig::right_context_secs`.
     #[serde(default = "default_streaming_right_context_secs")]
     pub streaming_right_context_secs: f32,
+
+    /// Split batch recordings at pauses and transcribe each speech segment
+    /// separately. Works around Parakeet TDT dropping speech that follows a
+    /// long pause, or that ends a long stretch of continuous speech.
+    /// Default: false
+    #[serde(default)]
+    pub segment_on_pauses: bool,
 }
 
 fn default_streaming_chunk_secs() -> f32 {
@@ -80,6 +87,7 @@ impl Default for ParakeetConfig {
             streaming_chunk_secs: default_streaming_chunk_secs(),
             streaming_left_context_secs: default_streaming_left_context_secs(),
             streaming_right_context_secs: default_streaming_right_context_secs(),
+            segment_on_pauses: false,
         }
     }
 }
@@ -187,6 +195,7 @@ mod tests {
         assert_eq!(config.model, "parakeet-tdt-0.6b-v3");
         assert!(config.model_type.is_none());
         assert!(!config.on_demand_loading);
+        assert!(!config.segment_on_pauses);
     }
 
     #[test]
